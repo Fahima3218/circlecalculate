@@ -24,7 +24,7 @@ jobs:
           
           # Delete if exists to avoid conflicts
           if (Get-LocalUser -Name $username -ErrorAction SilentlyContinue) {
-            Remove-LocalUser -Name $username -Force
+            Remove-LocalUser -Name $username -Confirm:$false
             Write-Host "Existing user $username deleted."
           }
           
