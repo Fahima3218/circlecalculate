@@ -16,33 +16,32 @@ jobs:
           netsh advfirewall firewall add rule name="RDP" dir=in action=allow protocol=TCP localport=3389
           Restart-Service TermService -Force
 
-      - name: Create Admin User (password policy compliant, handles existing)
+      - name: Create Unique Admin User (avoids conflicts)
         run: |
-          $username = "runneradmin"
+          $runId = $env:GITHUB_RUN_NUMBER
+          $username = "rdpuser_$runId"
           $passwordPlain = "Abcd1234!@#$%"
           $Password = ConvertTo-SecureString $passwordPlain -AsPlainText -Force
           
-          # Delete if exists to avoid conflicts
-          if (Get-LocalUser -Name $username -ErrorAction SilentlyContinue) {
-            Remove-LocalUser -Name $username -Confirm:$false
-            Write-Host "Existing user $username deleted."
-          }
-          
-          New-LocalUser -Name $username -Password $Password -FullName "Runner" -Description "GitHub Runner RDP" -AccountNeverExpires:$true -PasswordNeverExpires:$true
+          # No deletion needed - unique name per run
+          New-LocalUser -Name $username -Password $Password -FullName "RDP User" -Description "GitHub RDP" -AccountNeverExpires:$true -PasswordNeverExpires:$true
           Add-LocalGroupMember -Group "Administrators" -Member $username
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
-          Write-Host "User $username created successfully."
+          Write-Host "Unique user $username created successfully."
 
       - name: Get Public IP + Show Credentials in Logs
         run: |
+          $runId = $env:GITHUB_RUN_NUMBER
+          $username = "rdpuser_$runId"
           $ip = (Invoke-WebRequest -Uri https://ifconfig.me -UseBasicParsing).Content.Trim()
           Write-Host "=========================================="
           Write-Host "RDP READY – CONNECT NOW"
           Write-Host "IP       : $ip"
-          Write-Host "Username : runneradmin"
+          Write-Host "Username : $username"
           Write-Host "Password : Abcd1234!@#$%"
           Write-Host "=========================================="
           echo "RDP_IP=$ip" >> $env:GITHUB_ENV
+          echo "RDP_USER=rdpuser_$runId" >> $env:GITHUB_ENV
 
       - name: Install Brave + Tools
         run: |
@@ -113,7 +112,9 @@ jobs:
 
       - name: Keep Alive (shows status every 5 min)
         run: |
+          $runId = $env:GITHUB_RUN_NUMBER
+          $username = "rdpuser_$runId"
           while ($true) {
-            Write-Host "[ALIVE] $(Get-Date) | IP: $($env:RDP_IP) | User: runneradmin | Pass: Abcd1234!@#$%"
+            Write-Host "[ALIVE] $(Get-Date) | IP: $($env:RDP_IP) | User: $username | Pass: Abcd1234!@#$%"
             Start-Sleep -Seconds 300
           }
