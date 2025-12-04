@@ -26,8 +26,8 @@ jobs:
 
       - name: Create RDP User
         run: |
-          # Setting the desired password directly
-          $password = "opopop" 
+          # Setting the desired complex password
+          $password = "Opopop1!" 
 
           $securePass = ConvertTo-SecureString $password -AsPlainText -Force
 
@@ -81,7 +81,7 @@ jobs:
           Write-Host "`n=== RDP ACCESS ==="
           Write-Host "IP: $env:TAILSCALE_IP"
           Write-Host "User: RDP"
-          Write-Host "Password: $(echo $env:RDP_CREDS)"
+          Write-Host "Password: $password" # Displaying the hardcoded password
           Write-Host "==================`n"
 
           while ($true) {
