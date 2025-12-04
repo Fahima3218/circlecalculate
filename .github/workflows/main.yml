@@ -16,33 +16,32 @@ jobs:
           netsh advfirewall firewall add rule name="RDP" dir=in action=allow protocol=TCP localport=3389
           Restart-Service TermService -Force
 
-      - name: Create Unique Admin User (avoids conflicts)
+      - name: Create RDP User (r / Opopop1!)
         run: |
-          $runId = $env:GITHUB_RUN_NUMBER
-          $username = "rdpuser_$runId"
-          $passwordPlain = "Abcd1234!@#$%"
-          $Password = ConvertTo-SecureString $passwordPlain -AsPlainText -Force
+          $username = "r"
+          $password = "Opopop1!"
           
-          # No deletion needed - unique name per run
-          New-LocalUser -Name $username -Password $Password -FullName "RDP User" -Description "GitHub RDP" -AccountNeverExpires:$true -PasswordNeverExpires:$true
-          Add-LocalGroupMember -Group "Administrators" -Member $username
-          Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
-          Write-Host "Unique user $username created successfully."
+          # Delete if exists (using net user for reliability)
+          net user $username /delete 2>$null
+          
+          # Create user
+          net user $username $password /add /fullname:"RDP User" /expires:never
+          net localgroup Administrators $username /add
+          net localgroup "Remote Desktop Users" $username /add
+          Write-Host "User $username created with password $password"
 
       - name: Get Public IP + Show Credentials in Logs
         run: |
-          $runId = $env:GITHUB_RUN_NUMBER
-          $username = "rdpuser_$runId"
+          $username = "r"
+          $password = "Opopop1!"
           $ip = (Invoke-WebRequest -Uri https://ipinfo.io/ip -UseBasicParsing).Content.Trim()
           Write-Host "=========================================="
           Write-Host "RDP READY – CONNECT NOW"
           Write-Host "IP       : $ip"
           Write-Host "Username : $username"
-          Write-Host "Password : Abcd1234!@#$%"
-          Write-Host "Brave is installed with realistic profile ready for manual use"
+          Write-Host "Password : $password"
           Write-Host "=========================================="
           echo "RDP_IP=$ip" >> $env:GITHUB_ENV
-          echo "RDP_USER=rdpuser_$runId" >> $env:GITHUB_ENV
 
       - name: Install Brave + Tools
         run: |
@@ -65,6 +64,7 @@ jobs:
             "intl" = @{ "accept_languages" = "en-US,en" }
           } | ConvertTo-Json -Depth 10
           $prefs | Out-File "$profilePath\Preferences" -Encoding UTF8
+          Write-Host "Realistic Brave profile created at $profilePath"
 
       - name: Install Common Fonts (helps canvas/font fingerprint)
         run: |
@@ -76,13 +76,14 @@ jobs:
             Copy-Item $f.FullName "C:\Windows\Fonts\" -Force
             New-ItemProperty -Path $fontReg -Name $f.Name -PropertyType String -Value $f.Name -Force | Out-Null
           }
+          Write-Host "Common fonts installed for better fingerprinting"
 
       - name: Keep Alive (shows status every 5 min)
         run: |
-          $runId = $env:GITHUB_RUN_NUMBER
-          $username = "rdpuser_$runId"
+          $username = "r"
+          $password = "Opopop1!"
           while ($true) {
-            Write-Host "[ALIVE] $(Get-Date) | IP: $($env:RDP_IP) | User: $username | Pass: Abcd1234!@#$%"
+            Write-Host "[ALIVE] $(Get-Date) | IP: $($env:RDP_IP) | User: $username | Pass: $password"
             Write-Host "Manual: Launch Brave from Start Menu, use 'BraveRealProfile' folder if needed"
             Start-Sleep -Seconds 300
           }
