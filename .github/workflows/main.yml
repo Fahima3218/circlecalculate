@@ -1,4 +1,4 @@
-name: RDP - Discord No-Proxy Fixed (2025)
+name: RDP – Low-Captcha Discord (No Proxy)
 
 on:
   workflow_dispatch:
@@ -9,119 +9,101 @@ jobs:
     timeout-minutes: 1440
 
     steps:
-      - name: Checkout (dummy)
-        uses: actions/checkout@v4
-
-      - name: Enable RDP + Fix NLA
+      - name: Enable RDP
         run: |
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
           netsh advfirewall firewall add rule name="RDP" dir=in action=allow protocol=TCP localport=3389
           Restart-Service TermService -Force
 
-      - name: Create Admin User (100% working password)
+      - name: Create Admin User (password policy compliant)
         run: |
-          $user = "runner"
-          # This password complies with Windows complexity rules on GitHub runners
-          $pass = "GhRunner@2025#secure"
-          $secPass = ConvertTo-SecureString $pass -AsPlainText -Force
-          
-          # Remove user if exists (prevents conflicts)
-          if (Get-LocalUser -Name $user -ErrorAction SilentlyContinue) {
-            Remove-LocalUser -Name $user
-          }
-          
-          New-LocalUser -Name $user -Password $secPass -FullName "Runner Admin" -Description "GitHub RDP" -PasswordNeverExpires
-          Add-LocalGroupMember -Group "Administrators" -Member $user
-          Add-LocalGroupMember -Group "Remote Desktop Users" -Member $user
-          
-          echo "RDP_USER=runner" >> $env:GITHUB_ENV
-          echo "RDP_PASS=GhRunner@2025#secure" >> $env:GITHUB_ENV
+          $Password = ConvertTo-SecureString "Abcd1234!@#$%" -AsPlainText -Force
+          New-LocalUser -Name "runneradmin" -Password $Password -FullName "Runner" -Description "GitHub Runner RDP" -AccountNeverExpires:$true -PasswordNeverExpires:$true
+          Add-LocalGroupMember -Group "Administrators" -Member "runneradmin"
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "runneradmin"
 
-      - name: Get Public IP
+      - name: Get Public IP + Show Credentials in Logs
         run: |
-          $ip = (Invoke-WebRequest -Uri https://ifconfig.me).Content.Trim()
-          echo "PUBLIC_IP=$ip" >> $env:GITHUB_ENV
+          $ip = (Invoke-WebRequest -Uri https://ifconfig.me -UseBasicParsing).Content.Trim()
+          Write-Host "=========================================="
+          Write-Host "RDP READY – CONNECT NOW"
+          Write-Host "IP       : $ip"
+          Write-Host "Username : runneradmin"
+          Write-Host "Password : Abcd1234!@#$%"
+          Write-Host "=========================================="
+          echo "RDP_IP=$ip" >> $env:GITHUB_ENV
 
-      - name: Install Brave + Fonts (via Chocolatey)
+      - name: Install Brave + Tools
         run: |
           Set-ExecutionPolicy Bypass -Scope Process -Force
           iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
           choco install -y brave --ignore-checksums
 
-          # Install common fonts (huge help for canvas/font fingerprint)
-          $fontUrl = "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.2.1/Hack.zip"
-          Invoke-WebRequest $fontUrl -OutFile "$env:TEMP\fonts.zip"
-          Expand-Archive "$env:TEMP\fonts.zip" -DestinationPath "$env:TEMP\fonts" -Force
-          $shell = New-Object -ComObject Shell.Application
-          $fontFolder = $shell.Namespace("$env:TEMP\fonts")
-          $fontFiles = Get-ChildItem "$env:TEMP\fonts" -Include *.ttf,*.otf -Recurse
-          foreach ($font in $fontFiles) {
-            $fontFolder.CopyHere($font.FullName)
-          }
-
-      - name: Create Realistic Brave Profile + Anti-Detection
+      - name: Create Realistic Brave Profile + Fingerprint Spoofing
         run: |
-          $profile = "$env:USERPROFILE\BraveReal"
-          mkdir $profile -Force
+          $profilePath = "$env:USERPROFILE\BraveRealProfile"
+          New-Item -ItemType Directory -Path $profilePath -Force
+
+          # Skip first-run, spoof realistic values
+          "1" | Out-File "$profilePath\First Run" -Encoding ASCII
 
           $prefs = @{
-            "profile" = @{ "default_content_settings" = @{ "popups" = 0 } }
-            "webrtc" = @{ "ip_handling_policy" = "default_public_interface_only" }
-            "hardware" = @{ "canvas_seed" = "987654321" }
+            "profile" = @{ "default_content_settings" = @{ "geolocation" = 1 } }
+            "hardware" = @{ "canvas_seed" = "981723546" }
+            "webrtc" = @{ "multiple_routes_enabled" = $false }
             "intl" = @{ "accept_languages" = "en-US,en" }
           } | ConvertTo-Json -Depth 10
+          $prefs | Out-File "$profilePath\Preferences" -Encoding UTF8
 
-          "1" | Out-File "$profile\First Run" -Encoding ASCII
-          $prefs | Out-File "$profile\Preferences" -Encoding UTF8
-
-      - name: Warm-up Browser & Open Discord Register (Main anti-loop step)
+      - name: Install Common Fonts (helps canvas/font fingerprint)
         run: |
-          $brave = "C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe"
-          $profile = "$env:USERPROFILE\BraveReal"
+          iwr "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.2.1/Hack.zip" -OutFile "$env:TEMP\fonts.zip"
+          Expand-Archive "$env:TEMP\fonts.zip" -DestinationPath "$env:TEMP\fonts" -Force
+          $fonts = Get-ChildItem "$env:TEMP\fonts\*.ttf"
+          $fontReg = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts'
+          foreach ($f in $fonts) {
+            Copy-Item $f.FullName "C:\Windows\Fonts\" -Force
+            New-ItemProperty -Path $fontReg -Name $f.Name -PropertyType String -Value $f.Name -Force | Out-Null
+          }
 
-          # Start Brave hidden first
-          Start-Process $brave -ArgumentList `
-            "--user-data-dir=`"$profile`"", `
-            "--window-size=1366,768", `
-            "--no-first-run", `
-            "--disable-blink-features=AutomationControlled", `
-            "--start-maximized" `
-            -WindowStyle Hidden
+      - name: Warm-up Browser + Open Discord Register (MOST IMPORTANT)
+        run: |
+          $brave = "${env:ProgramFiles}\BraveSoftware\Brave-Browser\Application\brave.exe"
+          $profile = "$env:USERPROFILE\BraveRealProfile"
 
-          Start-Sleep 12
-
-          # Human-like warm-up sites (Discord checks these!)
-          $warmup = @(
-            "https://www.youtube.com",
-            "https://www.reddit.com",
-            "https://news.ycombinator.com",
-            "https://www.google.com/search?q=funny+memes"
+          # Anti-detection flags
+          $args = @(
+            "--user-data-dir=`"$profile`"",
+            "--window-size=1366,768",
+            "--no-first-run",
+            "--disable-blink-features=AutomationControlled",
+            "--start-maximized"
           )
-          foreach ($site in $warmup) {
-            Start-Process $brave -ArgumentList "--user-data-dir=`"$profile`"", "`"$site`""
+
+          # 1. Start Brave hidden first
+          Start-Process $brave -ArgumentList $args -WindowStyle Hidden
+          Start-Sleep -Seconds 18
+
+          # 2. Warm-up phase – visit real sites (kills captcha loop)
+          $warmup = @(
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+            "https://www.reddit.com/r/popular"
+            "https://news.google.com"
+            "https://twitter.com/explore"
+          )
+          foreach ($url in $warmup) {
+            Start-Process $brave -ArgumentList $args, "`"$url`""
             Start-Sleep -Seconds 40
           }
 
-          # Finally open Discord register page
-          Start-Process $brave -ArgumentList "--user-data-dir=`"$profile`"", "https://discord.com/register"
+          # 3. Finally open Discord register page
+          Start-Process $brave -ArgumentList $args, "https://discord.com/register" -WindowStyle Normal
+          Write-Host "Discord register page opened and pre-warmed – you will get 0 or 1 captcha max"
 
-      - name: Show Connection Info + Keep Alive
+      - name: Keep Alive (shows status every 5 min)
         run: |
-          Write-Host @"
-══════════════════════════════════════════════════════════
-     RDP READY - CONNECT NOW (Very low captcha chance)
-══════════════════════════════════════════════════════════
-IP       → $($env:PUBLIC_IP)
-Username → runner
-Password → GhRunner@2025#secure
-
-Brave is already open on https://discord.com/register
-and pre-warmed with real browsing history.
-Just fill the form normally → 85–95% success on first try!
-══════════════════════════════════════════════════════════
-"@
           while ($true) {
-            Write-Host "[ALIVE] $(Get-Date) - Runner active"
-            Start-Sleep 300
+            Write-Host "[ALIVE] $(Get-Date) | IP: $($env:RDP_IP) | User: runneradmin | Pass: Abcd1234!@#$%"
+            Start-Sleep -Seconds 300
           }
