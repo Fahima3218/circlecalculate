@@ -1,0 +1,95 @@
+name: RDP
+
+on:
+  workflow_dispatch:
+
+jobs:
+  secure-rdp:
+    runs-on: windows-latest
+    timeout-minutes: 3600
+
+    steps:
+      - name: Configure Core RDP
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
+                             -Name "fDenyTSConnections" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                             -Name "UserAuthentication" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                             -Name "SecurityLayer" -Value 0 -Force
+
+          netsh advfirewall firewall delete rule name="RDP-Tailscale"
+          netsh advfirewall firewall add rule name="RDP-Tailscale" `
+            dir=in action=allow protocol=TCP localport=3389
+
+          Restart-Service -Name TermService -Force
+
+      - name: Create RDP User
+        run: |
+          Add-Type -AssemblyName System.Security
+          $U=[char[]](65..90)
+          $L=[char[]](97..122)
+          $N=[char[]](48..57)
+          $S=([char[]](33..47)+[char[]](58..64)+[char[]](91..96)+[char[]](123..126))
+
+          $password = opopop
+
+          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+
+          New-LocalUser -Name "r" -Password $securePass -AccountNeverExpires
+          Add-LocalGroupMember -Group "Administrators" -Member "RDP"
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
+
+          echo "RDP_CREDS=User: RDP | Password: $password" >> $env:GITHUB_ENV
+
+      - name: Install Brave Browser
+        run: |
+          $url = "https://brave-browser-downloads.s3.brave.com/latest/brave_installer-x64.exe"
+          $installer = "$env:TEMP\brave_installer-x64.exe"
+          Invoke-WebRequest -Uri $url -OutFile $installer
+          Start-Process -FilePath $installer -ArgumentList "--install","--silent","--system-level" -Wait
+          Remove-Item $installer -Force
+
+      - name: Install Tailscale
+        run: |
+          $url="https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
+          $installer="$env:TEMP\tailscale.msi"
+
+          Invoke-WebRequest -Uri $url -OutFile $installer
+          Start-Process msiexec.exe -ArgumentList "/i", "`"$installer`"", "/quiet", "/norestart" -Wait
+          Remove-Item $installer -Force
+
+      - name: Connect Tailscale
+        run: |
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" up `
+            --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} `
+            --hostname=gh-runner-$env:GITHUB_RUN_ID
+
+          $ip=$null;$r=0
+          while (-not $ip -and $r -lt 10) {
+            $ip=& "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
+            Start-Sleep 5
+            $r++
+          }
+
+          if (-not $ip) { exit 1 }
+
+          echo "TAILSCALE_IP=$ip" >> $env:GITHUB_ENV
+
+      - name: Verify RDP
+        run: |
+          $test = Test-NetConnection -ComputerName $env:TAILSCALE_IP -Port 3389
+          if (-not $test.TcpTestSucceeded) { exit 1 }
+
+      - name: Keep Alive
+        run: |
+          Write-Host "`n=== RDP ACCESS ==="
+          Write-Host "IP: $env:TAILSCALE_IP"
+          Write-Host "User: RDP"
+          Write-Host "Password: $(echo $env:RDP_CREDS)"
+          Write-Host "==================`n"
+
+          while ($true) {
+            Write-Host "[ACTIVE] $(Get-Date)"
+            Start-Sleep 300
+          }
