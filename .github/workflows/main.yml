@@ -11,7 +11,7 @@ jobs:
     steps:
       - name: Configure Core RDP
         run: |
-          # 1. Enable RDP connectivity and relax security for easy access
+          # 1. Enable RDP connectivity and security settings
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
                              -Name "fDenyTSConnections" -Value 0 -Force
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
@@ -19,7 +19,7 @@ jobs:
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
                              -Name "SecurityLayer" -Value 0 -Force
           
-          # 2. Set Standard Desktop Resolution (1920x1080) for a more "desktop-like" environment
+          # 2. Set Standard Desktop Resolution (1920x1080)
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
                              -Name "DefaultClientResolution" -Value 1920 -Force
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
@@ -50,13 +50,21 @@ jobs:
 
           echo "RDP_CREDS=User: $username | Password: $password" >> $env:GITHUB_ENV
 
-      - name: Install Brave Browser
+      - name: Install Brave Browser and Configure User Agent
         run: |
+          # Installation code
           $url = "https://brave-browser-downloads.s3.brave.com/latest/brave_installer-x64.exe"
           $installer = "$env:TEMP\brave_installer-x64.exe"
           Invoke-WebRequest -Uri $url -OutFile $installer
           Start-Process -FilePath $installer -ArgumentList "--install","--silent","--system-level" -Wait
           Remove-Item $installer -Force
+          
+          # Configuration to fix CAPTCHA loop: Change Brave's User Agent
+          $path = "HKCU:\Software\Policies\BraveSoftware\Brave"
+          if (-not (Test-Path $path)) { New-Item -Path $path -Force | Out-Null }
+          
+          # Force a widely-used Windows 10 Chrome User Agent string via Registry
+          Set-ItemProperty -Path $path -Name "UserAgent" -Value "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -Force
 
       - name: Install Tailscale
         run: |
