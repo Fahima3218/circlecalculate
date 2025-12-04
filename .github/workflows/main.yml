@@ -33,7 +33,7 @@ jobs:
         run: |
           $runId = $env:GITHUB_RUN_NUMBER
           $username = "rdpuser_$runId"
-          $ip = (Invoke-WebRequest -Uri https://ifconfig.me -UseBasicParsing).Content.Trim()
+          $ip = (Invoke-WebRequest -Uri https://ipinfo.io/ip -UseBasicParsing).Content.Trim()
           Write-Host "=========================================="
           Write-Host "RDP READY – CONNECT NOW"
           Write-Host "IP       : $ip"
