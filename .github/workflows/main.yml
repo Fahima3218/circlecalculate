@@ -11,13 +11,25 @@ jobs:
     steps:
       - name: Configure Core RDP
         run: |
+          # 1. Enable RDP connectivity and relax security for easy access
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
                              -Name "fDenyTSConnections" -Value 0 -Force
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
                              -Name "UserAuthentication" -Value 0 -Force
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
                              -Name "SecurityLayer" -Value 0 -Force
+          
+          # 2. Set Standard Desktop Resolution (1920x1080) for a more "desktop-like" environment
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                             -Name "DefaultClientResolution" -Value 1920 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                             -Name "DefaultClientColorDepth" -Value 32 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                             -Name "DefaultClientHeight" -Value 1080 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                             -Name "DefaultClientWidth" -Value 1920 -Force
 
+          # 3. Configure Firewall and Restart Service
           netsh advfirewall firewall delete rule name="RDP-Tailscale"
           netsh advfirewall firewall add rule name="RDP-Tailscale" `
             dir=in action=allow protocol=TCP localport=3389
@@ -26,9 +38,8 @@ jobs:
 
       - name: Create RDP User
         run: |
-          # Set the desired username
+          # Set the desired username and complex password
           $username = "R" 
-          # Setting the desired complex password
           $password = "Opopop1!" 
 
           $securePass = ConvertTo-SecureString $password -AsPlainText -Force
@@ -82,7 +93,7 @@ jobs:
         run: |
           Write-Host "`n=== RDP ACCESS ==="
           Write-Host "IP: $env:TAILSCALE_IP"
-          Write-Host "User: R" # Updated to display the new username
+          Write-Host "User: R"
           Write-Host "Password: $password"
           Write-Host "==================`n"
 
