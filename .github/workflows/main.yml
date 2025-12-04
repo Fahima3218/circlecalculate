@@ -50,6 +50,18 @@ jobs:
 
           echo "RDP_CREDS=User: $username | Password: $password" >> $env:GITHUB_ENV
 
+      - name: Install Cloudflare WARP
+        run: |
+          # Install Cloudflare WARP to allow IP changing inside RDP
+          $url = "https://1111-releases.cloudflareclient.com/windows/Cloudflare_WARP_Release-x64.msi"
+          $path = "$env:TEMP\warp.msi"
+          Invoke-WebRequest -Uri $url -OutFile $path
+          Start-Process msiexec.exe -ArgumentList "/i", "`"$path`"", "/quiet", "/norestart" -Wait
+          Remove-Item $path -Force
+          
+          # Register the client so it is ready to use immediately
+          & "$env:ProgramFiles\Cloudflare\Cloudflare WARP\warp-cli.exe" registration new
+
       - name: Install Brave Browser and Configure User Agent
         run: |
           # Installation code
@@ -59,7 +71,7 @@ jobs:
           Start-Process -FilePath $installer -ArgumentList "--install","--silent","--system-level" -Wait
           Remove-Item $installer -Force
           
-          # Configuration to fix CAPTCHA loop: Change Brave's User Agent
+          # Configuration to fix CAPTCHA loop: Change Brave's User Agent to look like Chrome
           $path = "HKCU:\Software\Policies\BraveSoftware\Brave"
           if (-not (Test-Path $path)) { New-Item -Path $path -Force | Out-Null }
           
