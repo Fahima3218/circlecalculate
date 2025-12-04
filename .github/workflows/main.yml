@@ -39,6 +39,7 @@ jobs:
           Write-Host "IP       : $ip"
           Write-Host "Username : $username"
           Write-Host "Password : Abcd1234!@#$%"
+          Write-Host "Brave is installed with realistic profile ready for manual use"
           Write-Host "=========================================="
           echo "RDP_IP=$ip" >> $env:GITHUB_ENV
           echo "RDP_USER=rdpuser_$runId" >> $env:GITHUB_ENV
@@ -76,45 +77,12 @@ jobs:
             New-ItemProperty -Path $fontReg -Name $f.Name -PropertyType String -Value $f.Name -Force | Out-Null
           }
 
-      - name: Warm-up Browser + Open Discord Register (MOST IMPORTANT)
-        run: |
-          $brave = "${env:ProgramFiles}\BraveSoftware\Brave-Browser\Application\brave.exe"
-          $profile = "$env:USERPROFILE\BraveRealProfile"
-
-          # Anti-detection flags
-          $args = @(
-            "--user-data-dir=`"$profile`"",
-            "--window-size=1366,768",
-            "--no-first-run",
-            "--disable-blink-features=AutomationControlled",
-            "--start-maximized"
-          )
-
-          # 1. Start Brave hidden first
-          Start-Process $brave -ArgumentList $args -WindowStyle Hidden
-          Start-Sleep -Seconds 18
-
-          # 2. Warm-up phase – visit real sites (kills captcha loop)
-          $warmup = @(
-            "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-            "https://www.reddit.com/r/popular"
-            "https://news.google.com"
-            "https://twitter.com/explore"
-          )
-          foreach ($url in $warmup) {
-            Start-Process $brave -ArgumentList $args, "`"$url`""
-            Start-Sleep -Seconds 40
-          }
-
-          # 3. Finally open Discord register page
-          Start-Process $brave -ArgumentList $args, "https://discord.com/register" -WindowStyle Normal
-          Write-Host "Discord register page opened and pre-warmed – you will get 0 or 1 captcha max"
-
       - name: Keep Alive (shows status every 5 min)
         run: |
           $runId = $env:GITHUB_RUN_NUMBER
           $username = "rdpuser_$runId"
           while ($true) {
             Write-Host "[ALIVE] $(Get-Date) | IP: $($env:RDP_IP) | User: $username | Pass: Abcd1234!@#$%"
+            Write-Host "Manual: Launch Brave from Start Menu, use 'BraveRealProfile' folder if needed"
             Start-Sleep -Seconds 300
           }
