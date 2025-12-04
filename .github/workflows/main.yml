@@ -16,12 +16,22 @@ jobs:
           netsh advfirewall firewall add rule name="RDP" dir=in action=allow protocol=TCP localport=3389
           Restart-Service TermService -Force
 
-      - name: Create Admin User (password policy compliant)
+      - name: Create Admin User (password policy compliant, handles existing)
         run: |
-          $Password = ConvertTo-SecureString "Abcd1234!@#$%" -AsPlainText -Force
-          New-LocalUser -Name "runneradmin" -Password $Password -FullName "Runner" -Description "GitHub Runner RDP" -AccountNeverExpires:$true -PasswordNeverExpires:$true
-          Add-LocalGroupMember -Group "Administrators" -Member "runneradmin"
-          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "runneradmin"
+          $username = "runneradmin"
+          $passwordPlain = "Abcd1234!@#$%"
+          $Password = ConvertTo-SecureString $passwordPlain -AsPlainText -Force
+          
+          # Delete if exists to avoid conflicts
+          if (Get-LocalUser -Name $username -ErrorAction SilentlyContinue) {
+            Remove-LocalUser -Name $username -Force
+            Write-Host "Existing user $username deleted."
+          }
+          
+          New-LocalUser -Name $username -Password $Password -FullName "Runner" -Description "GitHub Runner RDP" -AccountNeverExpires:$true -PasswordNeverExpires:$true
+          Add-LocalGroupMember -Group "Administrators" -Member $username
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
+          Write-Host "User $username created successfully."
 
       - name: Get Public IP + Show Credentials in Logs
         run: |
