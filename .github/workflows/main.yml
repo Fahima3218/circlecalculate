@@ -1,89 +1,145 @@
-name: RDP – Low-Captcha Discord (No Proxy)
-
+name: RDP
 on:
   workflow_dispatch:
-
 jobs:
-  rdp:
+  secure-rdp:
     runs-on: windows-latest
-    timeout-minutes: 1440
-
+    timeout-minutes: 3600
     steps:
-      - name: Enable RDP
+      - name: Configure Core RDP
         run: |
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
-          netsh advfirewall firewall add rule name="RDP" dir=in action=allow protocol=TCP localport=3389
-          Restart-Service TermService -Force
-
-      - name: Create RDP User (r / Opopop1!)
+          # 1. Enable RDP connectivity and security settings
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
+                             -Name "fDenyTSConnections" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                             -Name "UserAuthentication" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                             -Name "SecurityLayer" -Value 0 -Force
+         
+          # 2. Set Standard Desktop Resolution (1280x720)
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                             -Name "DefaultClientResolution" -Value 1280 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                             -Name "DefaultClientColorDepth" -Value 32 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                             -Name "DefaultClientHeight" -Value 720 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                             -Name "DefaultClientWidth" -Value 1280 -Force
+          # 3. Configure Firewall and Restart Service
+          netsh advfirewall firewall delete rule name="RDP-Tailscale"
+          netsh advfirewall firewall add rule name="RDP-Tailscale" `
+            dir=in action=allow protocol=TCP localport=3389
+          Restart-Service -Name TermService -Force
+      - name: Create RDP User
         run: |
-          $username = "r"
+          # Set the desired username and complex password
+          $username = "R"
           $password = "Opopop1!"
+          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+          New-LocalUser -Name $username -Password $securePass -AccountNeverExpires
+          Add-LocalGroupMember -Group "Administrators" -Member $username
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
+          echo "RDP_CREDS=User: $username | Password: $password" >> $env:GITHUB_ENV
+      - name: Install Cloudflare WARP
+        run: |
+          # Install Cloudflare WARP (Manual connect required after login)
+          $url = "https://1111-releases.cloudflareclient.com/windows/Cloudflare_WARP_Release-x64.msi"
+          $path = "$env:TEMP\warp.msi"
+          Invoke-WebRequest -Uri $url -OutFile $path
+          Start-Process msiexec.exe -ArgumentList "/i", "`"$path`"", "/quiet", "/norestart" -Wait
+          Remove-Item $path -Force
+         
+          # Register the client
+          & "$env:ProgramFiles\Cloudflare\Cloudflare WARP\warp-cli.exe" registration new
+      - name: Install Brave Browser
+        run: |
+          # Clean installation of Brave (No User Agent configuration)
+          $url = "https://brave-browser-downloads.s3.brave.com/latest/brave_installer-x64.exe"
+          $installer = "$env:TEMP\brave_installer-x64.exe"
+          Invoke-WebRequest -Uri $url -OutFile $installer
+          Start-Process -FilePath $installer -ArgumentList "--install","--silent","--system-level" -Wait
+          Remove-Item $installer -Force
+      - name: Harden Brave Fingerprint
+        run: |
+          # Create a custom profile directory for the RDP user to make it look aged and normal
+          $profileDir = "$env:USERPROFILE\AppData\Local\BraveSoftware\Brave-Browser\User Data\Default"
+          New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
           
-          # Delete if exists (using net user for reliability)
-          net user $username /delete 2>$null
-          
-          # Create user
-          net user $username $password /add /fullname:"RDP User" /expires:never
-          net localgroup Administrators $username /add
-          net localgroup "Remote Desktop Users" $username /add
-          Write-Host "User $username created with password $password"
-
-      - name: Get Public IP + Show Credentials in Logs
-        run: |
-          $username = "r"
-          $password = "Opopop1!"
-          $ip = (Invoke-WebRequest -Uri https://ipinfo.io/ip -UseBasicParsing).Content.Trim()
-          Write-Host "=========================================="
-          Write-Host "RDP READY – CONNECT NOW"
-          Write-Host "IP       : $ip"
-          Write-Host "Username : $username"
-          Write-Host "Password : $password"
-          Write-Host "=========================================="
-          echo "RDP_IP=$ip" >> $env:GITHUB_ENV
-
-      - name: Install Brave + Tools
-        run: |
-          Set-ExecutionPolicy Bypass -Scope Process -Force
-          iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-          choco install -y brave --ignore-checksums
-
-      - name: Create Realistic Brave Profile + Fingerprint Spoofing
-        run: |
-          $profilePath = "$env:USERPROFILE\BraveRealProfile"
-          New-Item -ItemType Directory -Path $profilePath -Force
-
-          # Skip first-run, spoof realistic values
-          "1" | Out-File "$profilePath\First Run" -Encoding ASCII
-
-          $prefs = @{
-            "profile" = @{ "default_content_settings" = @{ "geolocation" = 1 } }
-            "hardware" = @{ "canvas_seed" = "981723546" }
-            "webrtc" = @{ "multiple_routes_enabled" = $false }
-            "intl" = @{ "accept_languages" = "en-US,en" }
+          # Generate a realistic Preferences file with spoofed fingerprint values
+          $preferences = @{
+            'profile' = @{
+              'default_content_setting_values' = @{
+                'geolocation' = 1
+                'notifications' = 1
+                'media_stream' = 1
+              }
+              'intl' = @{
+                'accept_languages' = 'en-US,en'
+              }
+              'webrtc' = @{
+                'ip_handling_policy' = 'default_public_interface_only'
+              }
+              'hardware_acceleration_mode_enabled' = $true
+              'fingerprint' = @{
+                'enabled' = $false  # Disable Brave's built-in fingerprint randomization
+              }
+            }
           } | ConvertTo-Json -Depth 10
-          $prefs | Out-File "$profilePath\Preferences" -Encoding UTF8
-          Write-Host "Realistic Brave profile created at $profilePath"
-
-      - name: Install Common Fonts (helps canvas/font fingerprint)
+          
+          # Write the preferences
+          $preferences | Out-File -FilePath "$profileDir\Preferences" -Encoding UTF8
+          
+          # Add some fake history and cookies to age the profile (simulate normal usage)
+          $historyItems = @(
+            @{ url = 'https://www.google.com/'; title = 'Google'; visit_count = 5; last_visit_time = (Get-Date).AddDays(-3).ToFileTime() },
+            @{ url = 'https://www.youtube.com/'; title = 'YouTube'; visit_count = 3; last_visit_time = (Get-Date).AddDays(-1).ToFileTime() },
+            @{ url = 'https://news.google.com/'; title = 'Google News'; visit_count = 2; last_visit_time = (Get-Date).AddHours(-2).ToFileTime() }
+          )
+          $historyJson = $historyItems | ConvertTo-Json -Depth 3
+          $historyJson | Out-File -FilePath "$profileDir\History" -Encoding UTF8  # Note: This is a basic sim; real SQLite would be better but keeps it simple
+          
+          # Create empty cookies file to avoid fresh install flags
+          New-Item -ItemType File -Path "$profileDir\Cookies" -Force | Out-Null
+          
+          # Set a common User-Agent via command-line flag prep (will apply on launch)
+          echo "BRAVE_PROFILE_DIR=$profileDir" >> $env:GITHUB_ENV
+          echo "SPOOFED_USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" >> $env:GITHUB_ENV
+          
+          Write-Host "Brave fingerprint hardened: Custom profile created with spoofed prefs, fake history, and disabled randomization."
+      - name: Install Tailscale
         run: |
-          iwr "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.2.1/Hack.zip" -OutFile "$env:TEMP\fonts.zip"
-          Expand-Archive "$env:TEMP\fonts.zip" -DestinationPath "$env:TEMP\fonts" -Force
-          $fonts = Get-ChildItem "$env:TEMP\fonts\*.ttf"
-          $fontReg = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts'
-          foreach ($f in $fonts) {
-            Copy-Item $f.FullName "C:\Windows\Fonts\" -Force
-            New-ItemProperty -Path $fontReg -Name $f.Name -PropertyType String -Value $f.Name -Force | Out-Null
+          $url="https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
+          $installer="$env:TEMP\tailscale.msi"
+          Invoke-WebRequest -Uri $url -OutFile $installer
+          Start-Process msiexec.exe -ArgumentList "/i", "`"$installer`"", "/quiet", "/norestart" -Wait
+          Remove-Item $installer -Force
+      - name: Connect Tailscale
+        run: |
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" up `
+            --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} `
+            --hostname=gh-runner-$env:GITHUB_RUN_ID
+          $ip=$null;$r=0
+          while (-not $ip -and $r -lt 10) {
+            $ip=& "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
+            Start-Sleep 5
+            $r++
           }
-          Write-Host "Common fonts installed for better fingerprinting"
-
-      - name: Keep Alive (shows status every 5 min)
+          if (-not $ip) { exit 1 }
+          echo "TAILSCALE_IP=$ip" >> $env:GITHUB_ENV
+      - name: Verify RDP
         run: |
-          $username = "r"
-          $password = "Opopop1!"
+          $test = Test-NetConnection -ComputerName $env:TAILSCALE_IP -Port 3389
+          if (-not $test.TcpTestSucceeded) { exit 1 }
+      - name: Keep Alive
+        run: |
+          Write-Host "`n=== RDP ACCESS ==="
+          Write-Host "IP: $env:TAILSCALE_IP"
+          Write-Host "User: R"
+          Write-Host "Password: $password"
+          Write-Host "==================`n"
+          Write-Host "To launch Brave with hardened fingerprint:"
+          Write-Host 'Start-Process -FilePath "C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe" -ArgumentList @("--user-data-dir=$env:BRAVE_PROFILE_DIR", "--disable-blink-features=AutomationControlled", "--user-agent=`"$env:SPOOFED_USER_AGENT`"", "--no-first-run", "--window-size=1280,720", "https://www.google.com")'
           while ($true) {
-            Write-Host "[ALIVE] $(Get-Date) | IP: $($env:RDP_IP) | User: $username | Pass: $password"
-            Write-Host "Manual: Launch Brave from Start Menu, use 'BraveRealProfile' folder if needed"
-            Start-Sleep -Seconds 300
+            Write-Host "[ACTIVE] $(Get-Date)"
+            Start-Sleep 300
           }
