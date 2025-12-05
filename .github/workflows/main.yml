@@ -91,5 +91,5 @@ jobs:
 
           while ($true) {
             Write-Host "[ACTIVE] $(Get-Date)"
-            Start-Sleep 3000
+            Start-Sleep 300
           }
