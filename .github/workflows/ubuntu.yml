@@ -1,4 +1,4 @@
-name: Ubuntu RDP
+name: Ubuntu RDP Fast
 
 on:
   workflow_dispatch:
@@ -6,63 +6,52 @@ on:
 jobs:
   secure-rdp-ubuntu:
     runs-on: ubuntu-latest
-    timeout-minutes: 360  # GitHub Free limit is usually 6 hours (360 mins)
+    timeout-minutes: 360
 
     steps:
-      - name: Install Desktop & RDP (XFCE + XRDP)
+      - name: 1. Install Desktop & RDP (XFCE)
         run: |
           sudo apt-get update
-          # Install XFCE (Lightweight Desktop) and XRDP
+          # Install XFCE (Lightweight GUI) and XRDP server
           sudo apt-get install -y xfce4 xfce4-goodies xrdp
 
-          # Configure XRDP to use XFCE
+          # Configure XRDP to start XFCE
           sudo sed -i.bak '/fi/a #xrdp multiple users configuration \n xfce4-session \n' /etc/xrdp/startwm.sh
           
-          # Enable and start XRDP
+          # Enable and start the RDP service
           sudo systemctl enable xrdp
           sudo systemctl start xrdp
-          
-          # Open RDP port in firewall (if ufw is active, usually inactive on runners but good practice)
-          sudo ufw allow 3389/tcp || true
 
-      - name: Create RDP User
+      - name: 2. Create User 'r'
         run: |
-          # Set credentials
-          USER="r"
-          PASS="Opopop1!"
+          # Create user 'r' with password 'Opopop1!'
+          sudo useradd -m -s /bin/bash r
+          echo "r:Opopop1!" | sudo chpasswd
+          sudo usermod -aG sudo r
           
-          # Create user with home directory (-m) and bash shell (-s)
-          sudo useradd -m -s /bin/bash $USER
-          
-          # Set password
-          echo "$USER:$PASS" | sudo chpasswd
-          
-          # Add to sudo group (Admin rights)
-          sudo usermod -aG sudo $USER
-          
-          # Configure xsession for the user to launch XFCE
-          echo "xfce4-session" | sudo tee /home/$USER/.xsession
-          sudo chown $USER:$USER /home/$USER/.xsession
+          # Force XFCE session for this user
+          echo "xfce4-session" | sudo tee /home/r/.xsession
+          sudo chown r:r /home/r/.xsession
 
-          echo "RDP_USER=$USER" >> $GITHUB_ENV
-          echo "RDP_PASS=$PASS" >> $GITHUB_ENV
-
-      - name: Install Brave Browser
+      - name: 3. Install Brave Browser
         run: |
           sudo curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg
           echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] https://brave-browser-apt-release.s3.brave.com/ stable main" | sudo tee /etc/apt/sources.list.d/brave-browser-release.list
           sudo apt-get update
           sudo apt-get install -y brave-browser
 
-      - name: Install Tailscale
+      - name: 4. Connect Tailscale
         run: |
           curl -fsSL https://tailscale.com/install.sh | sh
-
-      - name: Connect Tailscale
-        run: |
-          sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-ubuntu-runner-${{ github.run_id }}
           
-          # Wait for IP allocation
+          # --ephemeral is CRITICAL to prevent 'exit code 1' errors by auto-removing old devices
+          sudo tailscale up \
+            --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} \
+            --hostname=gh-ubuntu-${{ github.run_id }} \
+            --ephemeral \
+            --ssh
+
+          # Get the IP address
           IP=""
           count=0
           while [ -z "$IP" ] && [ $count -lt 10 ]; do
@@ -70,27 +59,21 @@ jobs:
             sleep 5
             ((count++))
           done
-          
-          if [ -z "$IP" ]; then
-            echo "Failed to get Tailscale IP"
-            exit 1
-          fi
-          
           echo "TAILSCALE_IP=$IP" >> $GITHUB_ENV
 
-      - name: Keep Alive
+      - name: 5. Display Login Info
         run: |
           echo ""
-          echo "=== RDP ACCESS ==="
-          echo "IP: $TAILSCALE_IP"
-          echo "User: $RDP_USER"
-          echo "Password: $RDP_PASS"
-          echo "Desktop: XFCE4"
-          echo "=================="
+          echo "=========================================="
+          echo "   ✅ RDP READY - CONNECT NOW"
+          echo "=========================================="
+          echo "   IP Address : $TAILSCALE_IP"
+          echo "   Username   : r"
+          echo "   Password   : Opopop1!"
+          echo "=========================================="
           echo ""
           
-          # Infinite loop to keep runner active
+          # Keep the runner alive
           while true; do
-            echo "[ACTIVE] $(date)"
             sleep 300
           done
