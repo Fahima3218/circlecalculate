@@ -1,0 +1,96 @@
+name: Ubuntu RDP
+
+on:
+  workflow_dispatch:
+
+jobs:
+  secure-rdp-ubuntu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360  # GitHub Free limit is usually 6 hours (360 mins)
+
+    steps:
+      - name: Install Desktop & RDP (XFCE + XRDP)
+        run: |
+          sudo apt-get update
+          # Install XFCE (Lightweight Desktop) and XRDP
+          sudo apt-get install -y xfce4 xfce4-goodies xrdp
+
+          # Configure XRDP to use XFCE
+          sudo sed -i.bak '/fi/a #xrdp multiple users configuration \n xfce4-session \n' /etc/xrdp/startwm.sh
+          
+          # Enable and start XRDP
+          sudo systemctl enable xrdp
+          sudo systemctl start xrdp
+          
+          # Open RDP port in firewall (if ufw is active, usually inactive on runners but good practice)
+          sudo ufw allow 3389/tcp || true
+
+      - name: Create RDP User
+        run: |
+          # Set credentials
+          USER="r"
+          PASS="Opopop1!"
+          
+          # Create user with home directory (-m) and bash shell (-s)
+          sudo useradd -m -s /bin/bash $USER
+          
+          # Set password
+          echo "$USER:$PASS" | sudo chpasswd
+          
+          # Add to sudo group (Admin rights)
+          sudo usermod -aG sudo $USER
+          
+          # Configure xsession for the user to launch XFCE
+          echo "xfce4-session" | sudo tee /home/$USER/.xsession
+          sudo chown $USER:$USER /home/$USER/.xsession
+
+          echo "RDP_USER=$USER" >> $GITHUB_ENV
+          echo "RDP_PASS=$PASS" >> $GITHUB_ENV
+
+      - name: Install Brave Browser
+        run: |
+          sudo curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] https://brave-browser-apt-release.s3.brave.com/ stable main" | sudo tee /etc/apt/sources.list.d/brave-browser-release.list
+          sudo apt-get update
+          sudo apt-get install -y brave-browser
+
+      - name: Install Tailscale
+        run: |
+          curl -fsSL https://tailscale.com/install.sh | sh
+
+      - name: Connect Tailscale
+        run: |
+          sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-ubuntu-runner-${{ github.run_id }}
+          
+          # Wait for IP allocation
+          IP=""
+          count=0
+          while [ -z "$IP" ] && [ $count -lt 10 ]; do
+            IP=$(tailscale ip -4)
+            sleep 5
+            ((count++))
+          done
+          
+          if [ -z "$IP" ]; then
+            echo "Failed to get Tailscale IP"
+            exit 1
+          fi
+          
+          echo "TAILSCALE_IP=$IP" >> $GITHUB_ENV
+
+      - name: Keep Alive
+        run: |
+          echo ""
+          echo "=== RDP ACCESS ==="
+          echo "IP: $TAILSCALE_IP"
+          echo "User: $RDP_USER"
+          echo "Password: $RDP_PASS"
+          echo "Desktop: XFCE4"
+          echo "=================="
+          echo ""
+          
+          # Infinite loop to keep runner active
+          while true; do
+            echo "[ACTIVE] $(date)"
+            sleep 300
+          done
