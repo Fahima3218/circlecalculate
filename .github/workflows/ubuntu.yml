@@ -44,11 +44,11 @@ jobs:
         run: |
           curl -fsSL https://tailscale.com/install.sh | sh
           
-          # --ephemeral is CRITICAL to prevent 'exit code 1' errors by auto-removing old devices
+          # REMOVED --ephemeral (caused the crash)
+          # Make sure your Key is set to 'Ephemeral' in Tailscale Console if you want auto-delete
           sudo tailscale up \
             --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} \
             --hostname=gh-ubuntu-${{ github.run_id }} \
-            --ephemeral \
             --ssh
 
           # Get the IP address
